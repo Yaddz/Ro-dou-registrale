@@ -19,7 +19,7 @@ create-azure-openai-deployment-variable \
 create-azure-openai-api-key-variable
 
 create-logs-dir:
-	mkdir -p ./mnt/airflow-logs -m a=rwx
+	mkdir .\mnt\airflow-logs
 
 
 AI_PROVIDERS ?=
@@ -86,7 +86,7 @@ create-path-tmp-variable:
 
 create-inlabs-db:
 	@echo "Creating 'inlabs' database"
-	@docker exec -e PGPASSWORD=airflow ro-dou-postgres-1 sh -c "psql -q -U airflow -f /sql/init-db.sql > /dev/null"
+	@docker exec -e PGPASSWORD=airflow ro-dou-registrale-postgres-1 sh -c "psql -q -U airflow -f /sql/init-db.sql > /dev/null"
 
 create-inlabs-db-connection:
 	@echo "Creating 'inlabs_db' Airflow connection"
@@ -102,7 +102,7 @@ create-inlabs-db-connection:
 			\"connection_id\": \"inlabs_db\", \
 			\"conn_type\": \"postgres\", \
 			\"schema\": \"inlabs\", \
-			\"host\": \"ro-dou-postgres-1\", \
+			\"host\": \"ro-dou-registrale-postgres-1\", \
 			\"login\": \"airflow\", \
 			\"password\": \"airflow\", \
 			\"port\": 5432 \
@@ -133,7 +133,7 @@ activate-inlabs-load-dag:
 	@echo "Activating 'dou_inlabs_load_pg' Airflow DAG"
 	@docker exec airflow-webserver sh -c \
 		"curl -s -X 'PATCH' \
-			'http://localhost:8080/api/v1/dags/ro-dou_inlabs_load_pg' \
+			'http://localhost:8080/api/v1/dags/ro-dou-registrale_inlabs_load_pg' \
 			-H 'accept: application/json' \
 			-H 'Content-Type: application/json' \
 			--user \"airflow:airflow\" \

@@ -70,6 +70,11 @@ x-airflow-common: &airflow-common
 
     RO_DOU__DAG_CONF_DIR: /opt/airflow/dags/ro_dou/dag_confs
 
+    BASE_URL: ${BASE_URL}
+    ACCESS_TOKEN: ${ACCESS_TOKEN}
+    SECRET_ACCESS_TOKEN: ${SECRET_ACCESS_TOKEN}
+    YAML_PATH: ${YAML_PATH}
+
   volumes:
     - ./src:/opt/airflow/dags/ro_dou_src # for development purpose
     - ./mnt/airflow-logs:/opt/airflow/logs
