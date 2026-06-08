@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard · Registrale</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="bg-[#FAFAFA] text-slate-900" x-data="{ 
+    sidebarOpen: true, 
+    activeTab: 'home', 
+    modalOpen: false, 
+    historyModalOpen: false,
+    selectedMention: {},
+    companyHistory: [],
+    selectedCompany: {},
+    searchQuery: '',
+    allMentions: [],
+    loadingMentions: false,
+    timeLeft: 1800,
+    isSyncing: false,
+    alert: { show: false, message: '', type: 'success' },
+    showAlert(msg, type = 'success') {
+        this.alert = { show: true, message: msg, type: type };
+        setTimeout(() => { this.alert.show = false }, 5000);
+    },
+    formatTime(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return `${m}:${s < 10 ? '0' : ''}${s}h`;
+    },
+    async triggerSync() {
+        this.isSyncing = true;
+        try {
+            const resp = await fetch('/api/sync', {method: 'POST'});
+            const res = await resp.json();
+            if(res.status === 'success') {
+                this.showAlert(res.message, 'success');
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                this.showAlert(res.message, 'error');
+            }
+        } catch (e) {
+            this.showAlert('Falha na comunicação com o servidor', 'error');
+        } finally {
+            this.isSyncing = false;
+        }
+    },
+    async openHistory(company) {
+        this.selectedCompany = company;
+        this.companyHistory = [];
+        this.historyModalOpen = true;
+        try {
+            const r = await fetch(`/api/company_history/${company.cnpj}`);
+            this.companyHistory = await r.json();
+        } catch (e) {
+            console.error(e);
+        }
+    },
+    async saveSettings(data) {
+        const resp = await fetch('/api/save_settings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+        const res = await resp.json();
+        this.showAlert(res.message, res.status === 'success' ? 'success' : 'error');
+    }
+}" x-init="
+    setInterval(() => { if(timeLeft > 0) timeLeft-- }, 1000);
+    $watch('activeTab', value => {
+        if(value === 'mentions' && allMentions.length === 0) {
+            loadingMentions = true;
+            fetch('/api/mentions').then(r => r.json()).then(d => { allMentions = d; loadingMentions = false; });
+        }
+    });
+">
+
+    <!-- Alerta Interno -->
+    <template x-if="alert.show">
+        <div class="fixed top-6 right-6 z-[60] animate-in slide-in-from-right duration-300">
+            <div :class="alert.type === 'success' ? 'bg-green-600 shadow-[0_20px_50px_rgba(22,163,74,0.3)]' : 'bg-red-600 shadow-[0_20px_50px_rgba(220,38,38,0.3)]'" 
+                 class="flex items-center gap-4 px-6 py-4 rounded-2xl text-white min-w-[320px] border border-white/10 backdrop-blur-md">
+                <i :data-lucide="alert.type === 'success' ? 'check-circle' : 'alert-circle'" class="w-6 h-6 shrink-0"></i>
+                <div class="flex-1">
+                    <p class="text-[10px] font-black uppercase tracking-widest opacity-70" x-text="alert.type === 'success' ? 'Sucesso' : 'Erro detectado'"></p>
+                    <p class="text-sm font-bold" x-text="alert.message"></p>
+                </div>
+                <button @click="alert.show = false" class="hover:bg-white/20 p-1.5 rounded-xl transition-colors">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <!-- Sidebar -->
+    <aside :class="sidebarOpen ? 'w-64' : 'w-20'" class="fixed left-0 top-0 h-screen bg-white border-r border-slate-200 transition-all duration-300 z-30 flex flex-col">
+        <div class="p-6 flex items-center gap-3 overflow-hidden">
+            <div class="bg-slate-900 text-white rounded-xl p-2 shrink-0 shadow-lg shadow-slate-200">
+                <i data-lucide="shield-check" class="w-6 h-6"></i>
+            </div>
+            <span class="font-bold text-xl tracking-tight transition-opacity" :class="sidebarOpen ? 'opacity-100' : 'opacity-0'">Registrale</span>
+        </div>
+
+        <div class="px-6 mb-8 overflow-hidden">
+            <div class="flex items-center gap-3 p-2 rounded-xl bg-slate-50 border border-slate-100">
+                <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center shrink-0">
+                    <i data-lucide="user" class="w-4 h-4 text-slate-500"></i>
+                </div>
+                <div class="transition-opacity" :class="sidebarOpen ? 'opacity-100' : 'opacity-0 whitespace-nowrap'">
+                    <p class="text-xs font-bold uppercase tracking-tighter">{{ user.username }}</p>
+                    <p class="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{{ user.role }}</p>
+                </div>
+            </div>
+        </div>
+
+        <nav class="flex-1 px-4 space-y-1">
+            <button @click="activeTab = 'home'" :class="activeTab === 'home' ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-slate-50'" class="w-full flex items-center gap-4 p-3 rounded-xl transition-all">
+                <i data-lucide="layout-dashboard" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Visão Geral</span>
+            </button>
+            <button @click="activeTab = 'mentions'" :class="activeTab === 'mentions' ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-slate-50'" class="w-full flex items-center gap-4 p-3 rounded-xl transition-all">
+                <i data-lucide="megaphone" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Todas as Menções</span>
+            </button>
+            <button @click="activeTab = 'companies'" :class="activeTab === 'companies' ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-slate-50'" class="w-full flex items-center gap-4 p-3 rounded-xl transition-all">
+                <i data-lucide="building-2" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Empresas</span>
+            </button>
+            <button @click="activeTab = 'integrations'" :class="activeTab === 'integrations' ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-slate-50'" class="w-full flex items-center gap-4 p-3 rounded-xl transition-all">
+                <i data-lucide="plug-zap" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Integrações</span>
+            </button>
+            <button @click="activeTab = 'reports'" :class="activeTab === 'reports' ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-500 hover:bg-slate-50'" class="w-full flex items-center gap-4 p-3 rounded-xl transition-all">
+                <i data-lucide="file-text" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Relatórios</span>
+            </button>
+        </nav>
+
+        <div class="p-4 border-t border-slate-100 space-y-1">
+            {% if user.role == 'master' %}
+            <button @click="activeTab = 'master'" :class="activeTab === 'master' ? 'bg-slate-900 text-white shadow-lg shadow-slate-200' : 'text-slate-400 hover:text-slate-900'" class="w-full flex items-center gap-4 p-3 rounded-xl transition-colors">
+                <i data-lucide="users" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Gestão de Usuários</span>
+            </button>
+            {% endif %}
+            <a href="/logout" class="w-full flex items-center gap-4 p-3 rounded-xl text-red-400 hover:bg-red-50 transition-colors">
+                <i data-lucide="log-out" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Sair</span>
+            </a>
+            <button @click="sidebarOpen = !sidebarOpen" class="w-full flex items-center gap-4 p-3 rounded-xl text-slate-400 hover:bg-slate-50 transition-colors">
+                <i :data-lucide="sidebarOpen ? 'chevron-left' : 'chevron-right'" class="w-5 h-5"></i>
+                <span x-show="sidebarOpen" class="text-sm font-semibold">Recolher</span>
+            </button>
+        </div>
+    </aside>
+
+    <main :class="sidebarOpen ? 'ml-64' : 'ml-20'" class="transition-all duration-300 p-8 min-h-screen">
+        <!-- Header Status -->
+        <div class="flex items-center justify-between mb-10">
+            <div>
+                <h1 class="text-2xl font-black text-slate-900 tracking-tight">Monitor DOU</h1>
+                <div class="flex items-center gap-3 text-[11px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
+                    <div class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse"></span> Ro-DOU operacional</div>
+                    <span class="text-slate-200">|</span> 
+                    <div class="flex items-center gap-1.5 text-slate-400"><span class="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse"></span> Última sync: {{ last_sync }}</div>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <button @click="triggerSync()" 
+                        :disabled="isSyncing"
+                        :class="isSyncing ? 'bg-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 hover:shadow-blue-300 active:scale-95'"
+                        class="text-white px-5 py-2.5 rounded-xl shadow-lg shadow-blue-200 text-xs font-bold transition-all flex items-center gap-2">
+                    <i data-lucide="refresh-cw" class="w-4 h-4" :class="isSyncing && 'animate-spin'"></i>
+                    <span x-text="isSyncing ? 'Sincronizando...' : 'Sincronizar Agora'"></span>
+                </button>
+                <div class="bg-white border border-slate-200 px-4 py-2.5 rounded-xl shadow-sm text-xs font-bold text-slate-500">
+                    Sessão expira em: <span class="text-slate-900" x-text="formatTime(timeLeft)"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Visão Geral -->
+        <div x-show="activeTab === 'home'" x-cloak class="space-y-8 animate-in fade-in">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm hover:border-slate-300 transition-colors group">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Base GestãoClick</p>
+                    <h3 class="text-3xl font-bold mt-3 tracking-tight">{{ kpis.cnpjs }}</h3>
+                </div>
+                <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm hover:border-slate-300 transition-colors group">
+                    <p class="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Monitorados (DAGs)</p>
+                    <h3 class="text-3xl font-bold mt-3 tracking-tight text-blue-900">{{ kpis.ativos }}</h3>
+                </div>
+                <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm hover:border-slate-300 transition-colors group">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menções hoje</p>
+                    <h3 class="text-3xl font-bold mt-3 tracking-tight">{{ kpis.mencoes_hoje }}</h3>
+                </div>
+                <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm hover:border-slate-300 transition-colors group">
+                    <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Este mês</p>
+                    <h3 class="text-3xl font-bold mt-3 tracking-tight">{{ kpis.este_mes }}</h3>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div class="lg:col-span-2 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+                    <div class="p-6 border-b border-slate-100 flex items-center justify-between">
+                        <h2 class="font-bold text-lg text-slate-900">Menções Recentes</h2>
+                        <button @click="activeTab = 'mentions'" class="group flex items-center gap-2 bg-slate-50 hover:bg-slate-900 text-slate-500 hover:text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-300 border border-slate-100 hover:border-slate-900 hover:shadow-xl hover:shadow-slate-200">
+                            Ver Todas 
+                            <i data-lucide="arrow-right" class="w-3 h-3 transition-transform group-hover:translate-x-1"></i>
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left">
+                            <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                <tr>
+                                    <th class="px-6 py-4">Empresa</th>
+                                    <th class="px-6 py-4">Seção</th>
+                                    <th class="px-6 py-4">Data</th>
+                                    <th class="px-6 py-4 text-center">Ação</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                {% for m in mencoes %}
+                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                    <td class="px-6 py-4">
+                                        <p class="text-sm font-bold text-slate-900">{{ m.empresa }}</p>
+                                        <p class="text-[10px] text-slate-400 font-mono">{{ m.cnpj }}</p>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span class="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-black border border-blue-100 uppercase">{{ m.secao }}</span>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm text-slate-600">{{ m.data }}</td>
+                                    <td class="px-6 py-4 text-center">
+                                        <button @click='selectedMention = {{ m | tojson | safe }}; modalOpen = true' class="p-2.5 hover:bg-white hover:shadow-sm border border-transparent hover:border-slate-200 rounded-xl text-slate-400 hover:text-slate-900 transition-all">
+                                            <i data-lucide="eye" class="w-4 h-4"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                        {% if not mencoes %}
+                        <div class="p-20 text-center">
+                            <i data-lucide="search-x" class="w-12 h-12 text-slate-200 mx-auto mb-4"></i>
+                            <p class="text-sm text-slate-400 font-medium">Nenhuma menção encontrada nos logs recentes.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Histórico Lateral -->
+                <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-6">
+                    <h2 class="font-bold text-lg text-slate-900 mb-6">Histórico de Eventos</h2>
+                    <div class="space-y-6">
+                        {% for h in historico %}
+                        <div class="relative pl-6 border-l-2 border-slate-100 pb-2">
+                            <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white border-4 border-slate-100"></div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{{ h.data }}</p>
+                            <p class="text-sm font-bold text-slate-900 mt-1">{{ h.evento }}</p>
+                            <p class="text-xs text-slate-500 mt-1 leading-relaxed">{{ h.detalhes }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Todas as Menções (Simplificada) -->
+        <div x-show="activeTab === 'mentions'" x-cloak class="space-y-6 animate-in fade-in">
+            <div class="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm relative min-h-[400px]">
+                <!-- Loading State -->
+                <div x-show="loadingMentions" class="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
+                    <div class="w-10 h-10 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin mb-4"></div>
+                    <p class="text-sm font-bold text-slate-600">Carregando listagem completa...</p>
+                </div>
+
+                <div class="p-8 border-b border-slate-100 flex items-center justify-between">
+                    <h2 class="font-bold text-xl text-slate-900">Listagem Geral de Menções</h2>
+                    <div class="bg-slate-50 px-4 py-1.5 rounded-full border border-slate-100">
+                        <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total: <span class="text-slate-900" x-text="allMentions.length"></span></p>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            <tr>
+                                <th class="px-8 py-5">Empresa</th>
+                                <th class="px-8 py-5">Publicação</th>
+                                <th class="px-8 py-5">Trecho Identificado</th>
+                                <th class="px-8 py-5 text-center">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-for="m in allMentions" :key="m.id + m.data">
+                                <tr class="hover:bg-slate-50/50 transition-colors">
+                                    <td class="px-8 py-5">
+                                        <p class="text-sm font-bold text-slate-900" x-text="m.empresa"></p>
+                                        <p class="text-[10px] text-slate-400 font-mono" x-text="m.cnpj"></p>
+                                    </td>
+                                    <td class="px-8 py-5">
+                                        <span class="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-black border border-blue-100 uppercase mb-1" x-text="m.secao"></span>
+                                        <p class="text-xs font-bold text-slate-500" x-text="m.data"></p>
+                                    </td>
+                                    <td class="px-8 py-5">
+                                        <p class="text-xs text-slate-400 italic leading-relaxed line-clamp-2 max-w-xl" x-text="m.trecho"></p>
+                                    </td>
+                                    <td class="px-8 py-5 text-center">
+                                        <div class="flex items-center justify-center gap-2">
+                                            <button @click="selectedMention = m; modalOpen = true" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-slate-900 hover:text-white rounded-xl transition-all">
+                                                <i data-lucide="eye" class="w-4 h-4"></i>
+                                            </button>
+                                            <a :href="m.link" target="_blank" class="p-2.5 bg-slate-50 text-slate-400 hover:bg-blue-600 hover:text-white rounded-xl transition-all">
+                                                <i data-lucide="external-link" class="w-4 h-4"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Empresas -->
+        <div x-show="activeTab === 'companies'" x-cloak class="space-y-6 animate-in fade-in" 
+             x-data="{ companies: [], loading: false, searchQuery: '' }"
+             x-init="
+                $watch('activeTab', value => { 
+                    if(value === 'companies' && companies.length === 0) { 
+                        loading = true; 
+                        fetch('/api/companies')
+                            .then(r => r.json())
+                            .then(d => { 
+                                companies = d; 
+                                loading = false; 
+                                $nextTick(() => lucide.createIcons()); 
+                            }) 
+                    } 
+                });
+                $watch('searchQuery', () => $nextTick(() => lucide.createIcons()));
+             ">
+            <div class="flex items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div class="relative flex-1">
+                    <i data-lucide="search" class="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                    <input type="text" x-model="searchQuery" placeholder="Buscar por Razão Social ou CNPJ..." class="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-slate-900/5">
+                </div>
+                <a href="/api/export_report" class="flex items-center gap-2 bg-slate-100 text-slate-700 px-4 py-3 rounded-xl text-sm font-bold hover:bg-slate-200 transition-all">
+                    <i data-lucide="download" class="w-4 h-4"></i> Exportar CSV
+                </a>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm min-h-[400px] relative">
+                <!-- Loading State -->
+                <div x-show="loading" class="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
+                    <div class="w-10 h-10 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin mb-4"></div>
+                    <p class="text-sm font-bold text-slate-600">Carregando base de dados...</p>
+                    <p class="text-[10px] text-slate-400 uppercase tracking-widest mt-2">Isso pode levar alguns segundos devido ao volume de dados</p>
+                </div>
+
+                <table class="w-full text-left">
+                    <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <tr>
+                            <th class="px-6 py-4">Razão Social</th>
+                            <th class="px-6 py-4">CNPJ</th>
+                            <th class="px-6 py-4">UF / Cidade</th>
+                            <th class="px-6 py-4">Situação API</th>
+                            <th class="px-6 py-4 text-center">Monitor (DAG)</th>
+                            <th class="px-6 py-4 text-center">Histórico</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="c in companies.filter(i => i.nome.toLowerCase().includes(searchQuery.toLowerCase()) || i.cnpj.includes(searchQuery)).slice(0, 100)" :key="c.cnpj">
+                            <tr class="hover:bg-slate-50/50 transition-colors">
+                                <td class="px-6 py-4 text-sm font-bold text-slate-900" x-text="c.nome"></td>
+                                <td class="px-6 py-4 text-xs font-mono text-slate-500" x-text="c.cnpj"></td>
+                                <td class="px-6 py-4">
+                                    <p class="text-xs font-bold text-slate-700" x-text="c.uf"></p>
+                                    <p class="text-[10px] text-slate-400" x-text="c.cidade"></p>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span class="px-3 py-1 rounded-full text-[10px] font-bold border" 
+                                          :class="c.situacao === 'Ativa' ? 'bg-green-50 text-green-700 border-green-100' : 'bg-red-50 text-red-700 border-red-100'"
+                                          x-text="c.situacao"></span>
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    <span x-show="c.status" class="bg-blue-600 text-white px-2 py-1 rounded text-[9px] font-black uppercase shadow-sm shadow-blue-100">Monitorado</span>
+                                    <span x-show="!c.status" class="bg-slate-100 text-slate-400 px-2 py-1 rounded text-[9px] font-black uppercase">Inativo</span>
+                                </td>
+                                <td class="px-6 py-4 text-center">
+                                    <button @click="openHistory(c)" class="inline-flex items-center justify-center p-2.5 hover:bg-slate-900 hover:text-white border border-slate-200 rounded-xl transition-all group">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                    </button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+                
+                <div x-show="!loading && companies.length > 0" class="p-4 text-center border-t border-slate-50">
+                    <p class="text-xs text-slate-400">Exibindo os primeiros 100 resultados. Use a busca para filtrar.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Integrações -->
+        <div x-show="activeTab === 'integrations'" x-cloak class="max-w-4xl space-y-8 animate-in fade-in" x-data="{ 
+            settings: {{ settings | tojson }} 
+        }">
+            <div class="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm space-y-8">
+                <div>
+                    <h3 class="font-bold text-lg flex items-center gap-3 mb-6"><i data-lucide="mail" class="w-5 h-5 text-slate-400"></i> SMTP & Notificações</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Servidor SMTP</label>
+                            <input type="text" x-model="settings.smtp.server" placeholder="ex: smtp.gmail.com" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Porta</label>
+                            <input type="text" x-model="settings.smtp.port" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Usuário</label>
+                            <input type="text" x-model="settings.smtp.user" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase">Senha SMTP</label>
+                            <input type="password" x-model="settings.smtp.password" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                        </div>
+                    </div>
+                </div>
+                <hr class="border-slate-100">
+                <div>
+                    <h3 class="font-bold text-lg flex items-center gap-3 mb-6"><i data-lucide="key" class="w-5 h-5 text-slate-400"></i> API GestãoClick & Serviços</h3>
+                    <div class="space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase">Base URL API</label>
+                                <input type="text" x-model="settings.api_keys.gestaoclick_base_url" placeholder="https://api.gestaoclick.com.br" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase">Caminho do YAML Base (Template)</label>
+                                <input type="text" x-model="settings.api_keys.yaml_path" placeholder="dag_confs/Pesquisa_cnpj.yaml" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase">Access Token</label>
+                                <input type="password" x-model="settings.api_keys.gestaoclick_access_token" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-slate-400 uppercase">Secret Access Token</label>
+                                <input type="password" x-model="settings.api_keys.gestaoclick_secret_token" class="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="pt-6 flex justify-end">
+                    <button @click="saveSettings(settings)" class="bg-slate-900 text-white px-10 py-4 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-xl active:scale-95">
+                        Salvar Todas as Configurações
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: Relatórios -->
+        <div x-show="activeTab === 'reports'" x-cloak class="animate-in fade-in">
+            <div class="bg-white p-16 rounded-[2.5rem] border border-slate-200 shadow-sm border-dashed flex flex-col items-center justify-center text-center">
+                <div class="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-8 shadow-sm">
+                    <i data-lucide="download" class="w-10 h-10 text-slate-300"></i>
+                </div>
+                <h3 class="text-2xl font-black mb-3">Relatório de Menções</h3>
+                <p class="text-slate-400 max-w-sm mb-10 text-sm">Baixe a listagem completa de empresas e situações identificadas.</p>
+                <a href="/api/export_report" class="bg-slate-900 text-white px-12 py-5 rounded-2xl font-bold hover:bg-slate-800 transition-all shadow-2xl flex items-center gap-4 active:scale-95">
+                    <i data-lucide="file-down" class="w-6 h-6"></i> 
+                    Gerar e Baixar CSV
+                </a>
+            </div>
+        </div>
+
+        <!-- Tab: Gestão de Usuários (Master Only) -->
+        <div x-show="activeTab === 'master'" x-cloak class="space-y-8 animate-in fade-in" x-data="{ 
+            users: {{ users | tojson }},
+            newU: {username: '', password: '', role: 'user'},
+            async addUser() {
+                const r = await fetch('/api/users', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(this.newU)});
+                const res = await r.json();
+                if(res.status === 'success') { window.location.reload(); } else { alert(res.message); }
+            },
+            async delUser(un) {
+                if(!confirm('Deseja remover este usuário?')) return;
+                const r = await fetch(`/api/users?username=${un}`, {method:'DELETE'});
+                window.location.reload();
+            }
+        }">
+            <div class="bg-white p-8 rounded-3xl border border-slate-200 shadow-sm">
+                <h3 class="font-bold text-lg mb-6">Novo Usuário</h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Username</label>
+                        <input type="text" x-model="newU.username" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Password</label>
+                        <input type="password" x-model="newU.password" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Nível</label>
+                        <select x-model="newU.role" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm">
+                            <option value="user">Consulta</option>
+                            <option value="master">Master</option>
+                        </select>
+                    </div>
+                    <button @click="addUser()" class="bg-slate-900 text-white p-2.5 rounded-xl font-bold hover:bg-slate-800 transition-all">Criar Acesso</button>
+                </div>
+            </div>
+
+            <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                <table class="w-full text-left">
+                    <thead class="bg-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                        <tr>
+                            <th class="px-6 py-4">Usuário</th>
+                            <th class="px-6 py-4">Nível</th>
+                            <th class="px-6 py-4 text-right">Ação</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        <template x-for="u in users" :key="u.username">
+                            <tr class="hover:bg-slate-50/50">
+                                <td class="px-6 py-4 text-sm font-bold" x-text="u.username"></td>
+                                <td class="px-6 py-4 text-xs uppercase font-bold text-slate-400" x-text="u.role"></td>
+                                <td class="px-6 py-4 text-right">
+                                    <button @click="delUser(u.username)" class="text-red-400 hover:text-red-600 transition-colors"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal Detalhes -->
+    <div x-show="modalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm" x-transition.opacity>
+        <div @click.away="modalOpen = false" class="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-200">
+            <div class="p-8 border-b border-slate-50 flex justify-between items-center bg-white">
+                <h3 class="font-bold text-xl">Detalhes da Menção</h3>
+                <button @click="modalOpen = false" class="p-2 hover:bg-slate-100 rounded-full"><i data-lucide="x" class="w-5 h-5 text-slate-400"></i></button>
+            </div>
+            <div class="p-10 space-y-6">
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase">Empresa</label>
+                    <p class="font-black text-2xl" x-text="selectedMention.empresa"></p>
+                    <p class="text-sm text-slate-500" x-text="selectedMention.cnpj"></p>
+                </div>
+                <div class="flex gap-12">
+                    <div>
+                        <label class="text-[10px] font-bold text-slate-400 uppercase">Seção / Data</label>
+                        <p class="font-bold"><span class="text-blue-700" x-text="selectedMention.secao"></span> <span class="mx-2">·</span> <span x-text="selectedMention.data"></span></p>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-[10px] font-bold text-slate-400 uppercase">Trecho Localizado</label>
+                    <div class="mt-3 p-6 bg-slate-50 rounded-2xl border border-slate-100 text-slate-600 text-[13px] italic leading-relaxed" x-text="selectedMention.trecho"></div>
+                </div>
+                <div x-show="selectedMention.link">
+                    <a :href="selectedMention.link" target="_blank" class="flex items-center justify-center gap-2 w-full bg-blue-50 text-blue-700 py-4 rounded-2xl font-bold hover:bg-blue-100 transition-all border border-blue-100">
+                        <i data-lucide="external-link" class="w-4 h-4"></i> Abrir Publicação Oficial
+                    </a>
+                </div>
+            </div>
+            <div class="p-8 border-t border-slate-50 flex justify-end">
+                <button @click="modalOpen = false" class="bg-slate-900 text-white px-10 py-3 rounded-xl font-bold">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Histórico da Empresa -->
+    <div x-show="historyModalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm" x-transition.opacity>
+        <div @click.away="historyModalOpen = false" class="bg-white rounded-[2rem] w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-in zoom-in duration-200">
+            <div class="p-8 border-b border-slate-50 flex justify-between items-center bg-white shrink-0">
+                <div>
+                    <h3 class="font-bold text-xl">Histórico de Menções</h3>
+                    <p class="text-xs text-slate-400 font-bold uppercase mt-1 tracking-widest" x-text="selectedCompany.nome"></p>
+                </div>
+                <button @click="historyModalOpen = false" class="p-2 hover:bg-slate-100 rounded-full transition-colors"><i data-lucide="x" class="w-5 h-5 text-slate-400"></i></button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-8 space-y-6">
+                <template x-if="companyHistory.length === 0">
+                    <div class="py-20 text-center">
+                        <div class="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <i data-lucide="ghost" class="w-8 h-8 text-slate-200"></i>
+                        </div>
+                        <p class="text-sm text-slate-500 font-medium">Nenhuma menção histórica encontrada para esta empresa.</p>
+                    </div>
+                </template>
+
+                <template x-for="h in companyHistory" :key="h.id">
+                    <div class="group relative pl-8 border-l-2 border-slate-100 pb-8 last:pb-0">
+                        <div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white border-4 border-blue-600 shadow-[0_0_8px_rgba(37,99,235,0.4)]"></div>
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-[10px] font-black bg-blue-50 text-blue-700 px-2 py-0.5 rounded uppercase" x-text="h.secao"></span>
+                            <span class="text-[10px] font-bold text-slate-400" x-text="h.data"></span>
+                        </div>
+                        <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100 group-hover:border-slate-200 transition-colors">
+                            <p class="text-xs text-slate-600 leading-relaxed italic" x-text="'... ' + h.trecho + ' ...'"></p>
+                            <a :href="h.link" target="_blank" class="mt-3 inline-flex items-center gap-1.5 text-[10px] font-bold text-blue-600 hover:text-blue-800 transition-colors">
+                                <i data-lucide="external-link" class="w-3 h-3"></i> Ver Publicação Completa
+                            </a>
+                        </div>
+                    </div>
+                </template>
+            </div>
+
+            <div class="p-8 border-t border-slate-50 flex justify-end bg-slate-50/50 shrink-0">
+                <button @click="historyModalOpen = false" class="bg-slate-900 text-white px-10 py-3 rounded-xl font-bold hover:shadow-lg active:scale-95 transition-all">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <script> lucide.createIcons(); </script>
+</body>
+</html>

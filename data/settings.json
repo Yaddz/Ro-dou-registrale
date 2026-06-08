@@ -1,0 +1,14 @@
+{
+    "smtp": {
+        "server": "",
+        "port": "587",
+        "user": "",
+        "password": ""
+    },
+    "api_keys": {
+        "gestaoclick_access_token": "",
+        "gestaoclick_secret_token": "",
+        "google_sheets_id": "",
+        "office365_tenant_id": ""
+    }
+}
