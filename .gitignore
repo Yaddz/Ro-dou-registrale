@@ -138,3 +138,8 @@ test_notrack/
 **/mnt/pgdata/
 **/mnt/airflow-logs
 **/dag_confs/
+flask_sessions/
+data/users.json
+data/settings.json
+data/sync_history.json
+data/monitored_companies.json

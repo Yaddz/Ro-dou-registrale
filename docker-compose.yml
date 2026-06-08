@@ -135,6 +135,25 @@ services:
       - smtp4dev-data:/smtp4dev
     environment:
       - ServerOptions__HostName=smtp4dev
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: ro-dou-dashboard
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./dag_confs:/app/dag_confs
+      - ./mnt/airflow-logs:/app/mnt/airflow-logs
+      - .env:/app/.env
+    environment:
+      - AIRFLOW_URL=http://airflow-webserver:8080
+    restart: always
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
 # selenium:
 #     image: ghcr.io/gestaogovbr/selenium:ro-dou
 #     volumes:

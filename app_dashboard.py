@@ -525,7 +525,8 @@ def trigger_airflow_dag(dag_id):
     """Tenta disparar uma DAG no Airflow via API REST ou Docker CLI."""
     import requests
     try:
-        url = f"http://localhost:8080/api/v1/dags/{dag_id}/dagRuns"
+        airflow_url = os.getenv('AIRFLOW_URL', 'http://localhost:8080')
+        url = f"{airflow_url}/api/v1/dags/{dag_id}/dagRuns"
         auth = ("airflow", "airflow")
         response = requests.post(url, json={}, auth=auth, timeout=5)
         
@@ -534,11 +535,9 @@ def trigger_airflow_dag(dag_id):
         else:
             return False, f"Erro Airflow API ({response.status_code}): {response.text}"
     except Exception as e:
-        # Fallback para docker exec caso a API não esteja acessível na porta 8080 localmente
+        # Fallback para docker exec caso a API não esteja acessível
         import subprocess
         try:
-            # Assumindo que o nome do serviço no compose é 'airflow-webserver' ou similar,
-            # usaremos 'airflow-scheduler' que geralmente roda comandos CLI também.
             result = subprocess.run(["docker", "compose", "exec", "-T", "airflow-scheduler", "airflow", "dags", "trigger", dag_id], capture_output=True, text=True, timeout=15)
             if result.returncode == 0:
                 return True, f"DAG {dag_id} disparada via Docker CLI."
@@ -686,4 +685,4 @@ if __name__ == '__main__':
     os.makedirs(DATA_DIR, exist_ok=True)
     if not os.path.exists(USERS_FILE): save_json(USERS_FILE, [{"username": "admin", "password": "admin", "role": "master"}])
     if not os.path.exists(SETTINGS_FILE): save_json(SETTINGS_FILE, {"smtp":{}, "api_keys":{}})
-    app.run(debug=True, port=5000)
+    app.run(host='0.0.0.0', debug=False, port=5000)

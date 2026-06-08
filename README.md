@@ -1,19 +1,56 @@
-![banner](docs/img/banner.png)
-# Ro-DOU
+# Ro-DOU Registrale
 
-[![CI Tests](https://github.com/gestaogovbr/Ro-dou/actions/workflows/ci-tests.yml/badge.svg)](https://github.com/gestaogovbr/Ro-dou/actions/workflows/ci-tests.yml)
+Sistema inteligente de monitoramento e análise de publicações do Diário Oficial da União (DOU).
 
-O Ro-DOU é uma ferramenta que efetua um clipping do Diário Oficial da União (D.O.U.) e dos Diários Oficiais de municípios, por meio do [Querido Diário](https://docs.queridodiario.ok.org.br/pt-br/latest/). O Ro-DOU permite o envio de notificações (via e-mail, Slack, Discord ou outros) de todas as publicações que contenham as palavras-chaves que você definir.
+## 🚀 Arquitetura do Sistema
 
-Para acessar a página de documentação do Ro-DOU, que contém detalhes sobre o funcionamento da ferramenta e o modo de utilizá-la, além de outras informações importantes, acesse o link <https://gestaogovbr.github.io/Ro-dou/>.
+O projeto é composto por três pilares principais:
 
-O Ro-DOU é uma solução desenvolvida pela Secretaria de Gestão e Inovação do [Ministério da Gestão e da Inovação em Serviços Públicos](https://www.gov.br/gestao/pt-br).
+1.  **Robôs de Busca (Airflow):** Orquestram as varreduras diárias no DOU, segmentando a base de clientes para alta performance.
+2.  **Dashboard de Gestão (Flask):** Interface visual premium para controle de rotinas, relatórios avançados e configurações.
+3.  **Sincronizador (GestãoClick):** Integração automática para manter a base de monitoramento sempre atualizada com o seu ERP.
 
-<p>
-  <a href="https://discord.gg/8R6bS5D2KN" target="_blank">
-    <img alt="Discord Invite" src="https://img.shields.io/badge/Discord-Entre%20no%20servidor-blue?style=for-the-badge&logo=discord" >
-  </a>
-</p>
+## 🛠️ Como Iniciar (Produção via Docker)
 
-Ingresse em nosso [canal de comunidade](https://discord.gg/8R6bS5D2KN) para dúvidas, sugestões, contribuições e conversas em geral sobre o Ro-DOU.
+O sistema está totalmente containerizado para facilitar o deploy.
 
+### Pré-requisitos
+- Docker e Docker Compose instalados.
+- Arquivo `.env` configurado com as chaves necessárias.
+
+### Comandos
+1.  **Subir todos os serviços:**
+    ```bash
+    docker compose up -d
+    ```
+2.  **Acessar o Dashboard:**
+    Abra o navegador em `http://localhost:5000`
+
+3.  **Acessar o Apache Airflow:**
+    Abra o navegador em `http://localhost:8080` (User: `airflow` / Pass: `airflow`)
+
+## 📊 Dashboard de Controle
+
+O dashboard oferece as seguintes funcionalidades:
+
+-   **Visão Geral:** KPIs de monitoramento e menções em tempo real.
+-   **Rotinas de Busca:** Crie pesquisas personalizadas com agendamento amigável (sem precisar de código).
+-   **Relatórios:** Filtros avançados por data, empresa, seção do DOU e exportação inteligente para CSV.
+-   **Integrações:** Configure SMTP para e-mails e tokens de API diretamente pela interface.
+-   **Gestão de Usuários:** Controle quem tem acesso ao painel (Níveis Master e Consulta).
+
+## 🔐 Credenciais Padrão
+
+-   **Dashboard (Admin):** `admin` / `admin`
+-   **Airflow:** `airflow` / `airflow`
+
+## 📁 Estrutura de Pastas
+
+-   `/src`: Core do sistema e lógica dos buscadores.
+-   `/dag_confs`: Arquivos YAML de configuração das buscas.
+-   `/data`: Base de dados persistente (JSON).
+-   `/mnt`: Logs e dados de volume do Postgres.
+-   `app_dashboard.py`: Servidor do painel de controle.
+
+---
+© 2026 Registrale - Monitoramento Inteligente.

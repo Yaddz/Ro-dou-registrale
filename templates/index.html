@@ -596,6 +596,144 @@
             </div>
         </div>
 
+        <!-- Tab: Relatórios -->
+        <div x-show="activeTab === 'reports'" x-cloak class="space-y-6 animate-in fade-in">
+            <div class="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-4">
+                <div>
+                    <h2 class="font-bold text-xl text-slate-900">Relatórios de Menções</h2>
+                    <p class="text-sm text-slate-400 mt-1">Filtre, analise e exporte as publicações encontradas.</p>
+                </div>
+                <button @click="exportFilteredReports()" class="bg-slate-900 text-white px-6 py-3 rounded-xl font-bold hover:bg-slate-800 transition-all shadow-lg flex items-center gap-2 active:scale-95">
+                    <i data-lucide="download" class="w-5 h-5"></i> Exportar CSV Filtrado
+                </button>
+            </div>
+
+            <!-- Filtros -->
+            <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Buscar Empresa / CNPJ / Texto</label>
+                        <div class="relative">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                            <input type="text" x-model="reportFilters.search" placeholder="Ex: Ministério..." class="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none">
+                        </div>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Seção DOU</label>
+                        <select x-model="reportFilters.section" class="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none appearance-none">
+                            <option value="">Todas as Seções</option>
+                            <option value="SECAO_1">Seção 1 (Normativos)</option>
+                            <option value="SECAO_2">Seção 2 (Pessoal)</option>
+                            <option value="SECAO_3">Seção 3 (Contratos)</option>
+                        </select>
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Inicial</label>
+                        <input type="date" x-model="reportFilters.startDate" class="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none text-slate-600">
+                    </div>
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Final</label>
+                        <input type="date" x-model="reportFilters.endDate" class="w-full px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none text-slate-600">
+                    </div>
+                </div>
+
+                <!-- Filtro Avançado: Empresas Específicas -->
+                <div class="mt-6 pt-6 border-t border-slate-100">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-3">Filtrar por Empresas Específicas</label>
+                    
+                    <div class="flex flex-wrap gap-2 mb-4" x-show="reportFilters.selectedCompanies.length > 0">
+                        <template x-for="cnpj in reportFilters.selectedCompanies" :key="cnpj">
+                            <span class="bg-slate-900 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm">
+                                <span x-text="uniqueMentionedCompanies.find(c => c.cnpj === cnpj)?.nome || cnpj" class="truncate max-w-[200px]"></span>
+                                <button @click="toggleCompanyFilter(cnpj)" class="text-slate-400 hover:text-white transition-colors"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+                            </span>
+                        </template>
+                        <button @click="reportFilters.selectedCompanies = []" class="text-xs font-bold text-slate-400 hover:text-slate-600 underline px-2 py-1.5">Limpar Seleção</button>
+                    </div>
+
+                    <div class="relative w-full md:w-1/2">
+                        <i data-lucide="building" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input type="text" x-model="companySearch" placeholder="Digite a razão social ou CNPJ para adicionar ao filtro..." class="w-full pl-10 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-4 focus:ring-slate-900/5">
+                        
+                        <!-- Dropdown de Autocomplete -->
+                        <div x-show="suggestedCompanies.length > 0" class="absolute z-20 w-full mt-2 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto" @click.away="companySearch = ''">
+                            <template x-for="c in suggestedCompanies" :key="c.cnpj">
+                                <button @click="toggleCompanyFilter(c.cnpj)" class="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 flex items-center justify-between group">
+                                    <div>
+                                        <p class="text-xs font-bold text-slate-900" x-text="c.nome"></p>
+                                        <p class="text-[10px] text-slate-500 font-mono" x-text="c.cnpj"></p>
+                                    </div>
+                                    <i data-lucide="plus" class="w-4 h-4 text-slate-300 group-hover:text-blue-500"></i>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabela de Resultados -->
+            <div class="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-sm relative min-h-[400px]">
+                <div x-show="loadingMentions" class="absolute inset-0 bg-white/50 backdrop-blur-[2px] z-10 flex flex-col items-center justify-center">
+                    <div class="w-10 h-10 border-4 border-slate-200 border-t-slate-900 rounded-full animate-spin mb-4"></div>
+                    <p class="text-sm font-bold text-slate-600">Carregando dados...</p>
+                </div>
+                
+                <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                    <p class="text-sm font-bold text-slate-600">Mostrando <span x-text="filteredReports.length"></span> resultados filtrados</p>
+                    <button @click="clearReportFilters()" class="text-xs font-bold text-slate-400 hover:text-slate-900 transition-colors underline">Limpar Filtros</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-white text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                            <tr>
+                                <th class="px-6 py-4 w-12 text-center">
+                                    <input type="checkbox" 
+                                           :checked="filteredReports.length > 0 && selectedMentions.length === filteredReports.length"
+                                           @change="$event.target.checked ? selectedMentions = filteredReports.map(m => m.id) : selectedMentions = []"
+                                           class="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer">
+                                </th>
+                                <th class="px-6 py-4">Data</th>
+                                <th class="px-6 py-4">Empresa / CNPJ</th>
+                                <th class="px-6 py-4">Seção</th>
+                                <th class="px-6 py-4 max-w-md">Trecho</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <template x-if="filteredReports.length === 0">
+                                <tr>
+                                    <td colspan="5" class="px-6 py-12 text-center text-slate-400 text-sm">Nenhum resultado encontrado para os filtros atuais.</td>
+                                </tr>
+                            </template>
+                            <template x-for="m in filteredReports.slice(0, 100)" :key="m.id">
+                                <tr class="hover:bg-slate-50/50 transition-colors" :class="selectedMentions.includes(m.id) ? 'bg-blue-50/30' : ''">
+                                    <td class="px-6 py-4 text-center">
+                                        <input type="checkbox" :value="m.id" x-model="selectedMentions" class="w-4 h-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900 cursor-pointer">
+                                    </td>
+                                    <td class="px-6 py-4 text-xs font-bold text-slate-600 whitespace-nowrap" x-text="m.data"></td>
+                                    <td class="px-6 py-4">
+                                        <p class="text-xs font-bold text-slate-900 line-clamp-1" x-text="m.empresa"></p>
+                                        <p class="text-[10px] text-slate-400 font-mono" x-text="m.cnpj"></p>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span class="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[9px] font-black border border-blue-100 uppercase" x-text="m.secao"></span>
+                                    </td>
+                                    <td class="px-6 py-4 max-w-md">
+                                        <p class="text-xs text-slate-500 italic line-clamp-2" x-text="m.trecho"></p>
+                                    </td>
+                                </tr>
+                            </template>
+                            <template x-if="filteredReports.length > 100">
+                                <tr>
+                                    <td colspan="5" class="px-6 py-4 text-center text-xs font-bold text-slate-400 bg-slate-50">Mostrando os 100 resultados mais recentes. Exporte para ver todos.</td>
+                                </tr>
+                            </template>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
     <!-- Modais -->
     <div x-show="modalOpen" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm" x-transition.opacity>
         <div @click.away="modalOpen = false" class="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl overflow-hidden animate-in zoom-in duration-200">
@@ -677,6 +815,112 @@
                 routineModal: false,
                 editMode: false,
                 currentR: { id: '', name: '', file: '', schedule: '0 5 * * *', simple_schedule: '0 5 * * *', terms_raw: '', organs_raw: '', sections: [], emails_raw: '', subject: '', type: 'custom' },
+
+                // Reports Management (Refactored)
+                reportFilters: { search: '', section: '', startDate: '', endDate: '', selectedCompanies: [] },
+                companySearch: '',
+                selectedMentions: [],
+
+                get uniqueMentionedCompanies() {
+                    const map = new Map();
+                    this.allMentions.forEach(m => { if(m && m.cnpj) map.set(m.cnpj, m.empresa || m.cnpj); });
+                    return Array.from(map.entries()).map(([cnpj, nome]) => ({cnpj, nome}));
+                },
+
+                get suggestedCompanies() {
+                    if(!this.companySearch) return [];
+                    const q = this.companySearch.toLowerCase();
+                    return this.uniqueMentionedCompanies.filter(c => c.nome.toLowerCase().includes(q) || c.cnpj.includes(q)).slice(0, 10);
+                },
+
+                toggleCompanyFilter(cnpj) {
+                    const idx = this.reportFilters.selectedCompanies.indexOf(cnpj);
+                    idx > -1 ? this.reportFilters.selectedCompanies.splice(idx, 1) : this.reportFilters.selectedCompanies.push(cnpj);
+                    this.companySearch = '';
+                },
+
+                // Helper robusto para datas DD/MM/YYYY -> Date Object
+                parseDate(dateStr) {
+                    if (!dateStr || dateStr === 'N/A') return null;
+                    const parts = dateStr.split('/');
+                    if (parts.length !== 3) return null;
+                    const d = new Date(parts[2], parts[1] - 1, parts[0]);
+                    return isNaN(d.getTime()) ? null : d;
+                },
+
+                get filteredReports() {
+                    if (!this.allMentions) return [];
+                    
+                    const q = this.reportFilters.search ? this.reportFilters.search.toLowerCase() : '';
+                    const section = this.reportFilters.section;
+                    const companies = this.reportFilters.selectedCompanies;
+                    const start = this.reportFilters.startDate ? new Date(this.reportFilters.startDate + 'T00:00:00') : null;
+                    const end = this.reportFilters.endDate ? new Date(this.reportFilters.endDate + 'T23:59:59') : null;
+
+                    return this.allMentions.filter(m => {
+                        if (!m) return false;
+
+                        // Filtro de Empresa Específica (Múltiplo)
+                        if (companies.length > 0 && !companies.includes(m.cnpj)) return false;
+
+                        // Filtro de Seção
+                        if (section && m.secao !== section) return false;
+
+                        // Filtro de Texto Global
+                        if (q) {
+                            const match = (m.empresa || '').toLowerCase().includes(q) || 
+                                          (m.cnpj || '').toLowerCase().includes(q) || 
+                                          (m.trecho || '').toLowerCase().includes(q);
+                            if (!match) return false;
+                        }
+
+                        // Filtros de Data
+                        if (start || end) {
+                            const mDate = this.parseDate(m.data);
+                            if (!mDate) return false; // Se tem filtro de data, registros sem data válida são ocultados
+                            if (start && mDate < start) return false;
+                            if (end && mDate > end) return false;
+                        }
+
+                        return true;
+                    });
+                },
+
+                clearReportFilters() {
+                    this.reportFilters = { search: '', section: '', startDate: '', endDate: '', selectedCompanies: [] };
+                    this.selectedMentions = [];
+                    this.companySearch = '';
+                    this.showAlert('Filtros limpos');
+                },
+
+                exportFilteredReports() {
+                    const dataToExport = this.selectedMentions.length > 0 
+                        ? this.allMentions.filter(m => this.selectedMentions.includes(m.id))
+                        : this.filteredReports;
+                    
+                    if (dataToExport.length === 0) return this.showAlert('Nenhum dado para exportar', 'error');
+                    
+                    const headers = ['Data', 'Empresa', 'CNPJ', 'Seção', 'Trecho', 'Link'];
+                    const rows = dataToExport.map(m => [
+                        m.data,
+                        `"${(m.empresa || '').replace(/"/g, '""')}"`,
+                        m.cnpj,
+                        m.secao,
+                        `"${(m.trecho || '').replace(/"/g, '""')}"`,
+                        m.link
+                    ]);
+                    
+                    const csvContent = [headers.join(';'), ...rows.map(e => e.join(';'))].join('\n');
+                    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    
+                    link.setAttribute('href', url);
+                    link.setAttribute('download', `relatorio_filtrado_${new Date().toISOString().split('T')[0]}.csv`);
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                },
 
                 showAlert(msg, type = 'success') {
                     this.alert = { show: true, message: msg, type: type };
@@ -859,7 +1103,7 @@
                         }
                     }, 1000);
                     this.$watch('activeTab', value => {
-                        if(value === 'mentions' && this.allMentions.length === 0) {
+                        if((value === 'mentions' || value === 'reports') && this.allMentions.length === 0) {
                             this.loadingMentions = true;
                             fetch('/api/mentions')
                                 .then(r => r.json())
