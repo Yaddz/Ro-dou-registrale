@@ -143,6 +143,9 @@ def atualizar_configuracoes(caminho_arquivo: str, clientes: List[Dict]):
         sessao_busca = config_parte['dag']['search']
         alvo_busca = sessao_busca[0] if isinstance(sessao_busca, list) else sessao_busca
         alvo_busca['terms'] = chunk
+        
+        # Força o formato de lista exigido pelo Pydantic do Airflow
+        config_parte['dag']['search'] = [alvo_busca]
 
         # Salvar
         caminho_parte = os.path.join(diretorio, f"{nome_arquivo_base}_part_{i+1}.yaml")
@@ -159,13 +162,28 @@ def executar_sincronizacao():
     secret_token = os.getenv("SECRET_ACCESS_TOKEN")
     arquivo_yaml = os.getenv("YAML_PATH")
 
+    # Fallback para settings.json se não estiver no env
     if not all([url_api, access_token, secret_token]):
-        logging.error("Credenciais ausentes no .env")
+        try:
+            settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "settings.json")
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r') as f:
+                    settings = json.load(f)
+                    ak = settings.get('api_keys', {})
+                    url_api = url_api or ak.get('gestaoclick_base_url')
+                    access_token = access_token or ak.get('gestaoclick_access_token')
+                    secret_token = secret_token or ak.get('gestaoclick_secret_token')
+                    arquivo_yaml = arquivo_yaml or ak.get('yaml_path')
+        except Exception as e:
+            logging.error(f"Erro ao tentar ler settings.json: {e}")
+
+    if not all([url_api, access_token, secret_token]):
+        logging.error("Credenciais ausentes no .env e no settings.json")
         return
 
     headers = {"access-token": access_token, "secret-access-token": secret_token, "Accept": "application/json"}
     
-    logging.info("Iniciando sincronização completa...")
+    logging.info(f"Iniciando sincronização completa via API: {url_api}...")
     clientes = get_monitored_data(url_api, "clientes", headers)
 
     if not clientes:

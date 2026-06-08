@@ -1,0 +1,52 @@
+[
+    {
+        "data": "08/06 15:40",
+        "evento": "Busca Manual",
+        "detalhes": "Disparada rotina: teste"
+    },
+    {
+        "data": "08/06 15:39",
+        "evento": "Busca Iniciada",
+        "detalhes": "Disparadas 11 partes da pesquisa sync."
+    },
+    {
+        "data": "08/06 15:35",
+        "evento": "Busca Manual",
+        "detalhes": "Disparada rotina: teste"
+    },
+    {
+        "data": "08/06 15:30",
+        "evento": "Busca (Tentativa)",
+        "detalhes": "Tentativa de disparar teste: Não foi possível contatar o Airflow: [WinError 2] O sistema não pode encontrar o arquivo especificado"
+    },
+    {
+        "data": "08/06 15:30",
+        "evento": "Busca (Tentativa)",
+        "detalhes": "Tentativa de disparar teste: Não foi possível contatar o Airflow: [WinError 2] O sistema não pode encontrar o arquivo especificado"
+    },
+    {
+        "data": "08/06 15:29",
+        "evento": "Busca (Tentativa)",
+        "detalhes": "Tentativa de disparar teste: Não foi possível contatar o Airflow: [WinError 2] O sistema não pode encontrar o arquivo especificado"
+    },
+    {
+        "data": "08/06 15:03",
+        "evento": "Sincronização OK",
+        "detalhes": "Sincronização realizada."
+    },
+    {
+        "data": "08/06 14:39",
+        "evento": "Sincronização OK",
+        "detalhes": "Sincronização realizada."
+    },
+    {
+        "data": "08/06 14:16",
+        "evento": "Sincronização OK",
+        "detalhes": "Sincronização realizada."
+    },
+    {
+        "data": "08/06 13:24",
+        "evento": "Sincronização OK",
+        "detalhes": "Sincronização realizada."
+    }
+]
