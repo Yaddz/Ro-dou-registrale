@@ -69,6 +69,7 @@ x-airflow-common: &airflow-common
     AIRFLOW_CONN_EXAMPLE_DATABASE_CONN: postgresql://airflow:airflow@postgres:5432/airflow
 
     RO_DOU__DAG_CONF_DIR: /opt/airflow/dags/ro_dou/dag_confs
+    DATABASE_URL: sqlite:////opt/airflow/data/rodou.db
 
     BASE_URL: ${BASE_URL}
     ACCESS_TOKEN: ${ACCESS_TOKEN}
@@ -77,6 +78,7 @@ x-airflow-common: &airflow-common
 
   volumes:
     - ./src:/opt/airflow/dags/ro_dou_src # for development purpose
+    - ./data:/opt/airflow/data
     - ./mnt/airflow-logs:/opt/airflow/logs
     - ./dag_confs:/opt/airflow/dags/ro_dou/dag_confs
     - ./dag_load_inlabs:/opt/airflow/dags/dag_load_inlabs

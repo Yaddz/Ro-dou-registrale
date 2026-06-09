@@ -1,14 +1,17 @@
 import os
-import re
-import yaml
-import json
 import logging
 import requests
-import math
-import glob
-import copy
-from typing import Set, Optional, Dict, List
-from datetime import datetime, timedelta
+import json
+from typing import Dict, List
+from datetime import datetime
+from sqlalchemy import create_engine, select, update
+from sqlalchemy.orm import sessionmaker
+
+# Importa modelos
+import sys
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(BASE_DIR, '..', '..'))
+from src.database.models import Company, SystemLog
 
 try:
     from dotenv import load_dotenv
@@ -18,15 +21,11 @@ except ImportError:
 # Configurando LOG
 logging.basicConfig(level=logging.INFO)
 
-DATA_DIR = "data"
-METADATA_FILE = os.path.join(DATA_DIR, "monitored_companies.json")
-
-# Extração de dados e validação!
-def extrair_cnpj(cnpj_bruto: str) -> Optional[str]:
-    """Limpa e valida o formato básico de um CNPJ."""
-    if not cnpj_bruto:
-        return None
-    return str(cnpj_bruto).strip()
+# Configuração do Banco de Dados
+# O caminho data/rodou.db deve estar acessível tanto pelo Docker quanto localmente
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///data/rodou.db")
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
 
 # Comunicação com a API
 def get_monitored_data(url_base: str, endpoint: str, headers: dict) -> List[Dict]:
@@ -51,7 +50,6 @@ def get_monitored_data(url_base: str, endpoint: str, headers: dict) -> List[Dict
             for item in itens:
                 cnpj = item.get("cnpj")
                 if cnpj:
-                    # Extração segura de endereço
                     endereco = {}
                     if item.get("enderecos") and len(item.get("enderecos")) > 0:
                         endereco = item.get("enderecos")[0].get("endereco", {})
@@ -76,83 +74,6 @@ def get_monitored_data(url_base: str, endpoint: str, headers: dict) -> List[Dict
         
     return clientes_completos
 
-# Validar e atualizar o YAML
-def atualizar_configuracoes(caminho_arquivo: str, clientes: List[Dict]):
-    """Atualiza os arquivos YAML de busca e salva o metadado central."""
-    
-    if not caminho_arquivo:
-        logging.error("Caminho do arquivo YAML não fornecido.")
-        return
-
-    # Tenta localizar o arquivo se o caminho absoluto falhar (ex: rodando fora do Docker)
-    if not os.path.exists(caminho_arquivo):
-        logging.warning(f"Caminho original não encontrado: {caminho_arquivo}")
-        nome_arquivo = os.path.basename(caminho_arquivo)
-        tentativas = [
-            os.path.join("dag_confs", nome_arquivo),
-            os.path.join("..", "dag_confs", nome_arquivo),
-            nome_arquivo
-        ]
-        for t in tentativas:
-            if os.path.exists(t):
-                logging.info(f"Arquivo localizado em caminho alternativo: {t}")
-                caminho_arquivo = t
-                break
-        else:
-            logging.error(f"Arquivo base não encontrado após várias tentativas: {caminho_arquivo}")
-            raise FileNotFoundError(f"Arquivo base não encontrado: {caminho_arquivo}")
-
-    # Salva Metadados para o Dashboard
-    if not os.path.exists(DATA_DIR):
-        os.makedirs(DATA_DIR)
-    
-    with open(METADATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(clientes, f, indent=4, ensure_ascii=False)
-    logging.info(f"Metadados salvos em {METADATA_FILE}")
-
-    # Ler o arquivo base
-    try:
-        with open(caminho_arquivo, 'r', encoding='utf-8') as f:
-            config_template = yaml.safe_load(f)
-    except Exception as e:
-        logging.error(f"Erro ao ler template: {e}")
-        return
-
-    diretorio = os.path.dirname(caminho_arquivo)
-    nome_arquivo_base = os.path.splitext(os.path.basename(caminho_arquivo))[0]
-
-    # Limpar partes antigas
-    for f_antigo in glob.glob(os.path.join(diretorio, f"{nome_arquivo_base}_part_*.yaml")):
-        try: os.remove(f_antigo)
-        except: pass
-
-    # Divisão em chunks
-    cnpjs = sorted(list(set([c['cnpj'] for c in clientes])))
-    CHUNK_SIZE = 1850
-    num_dags = math.ceil(len(cnpjs) / CHUNK_SIZE)
-    
-    for i in range(num_dags):
-        chunk = cnpjs[i * CHUNK_SIZE : (i + 1) * CHUNK_SIZE]
-        config_parte = copy.deepcopy(config_template)
-        
-        # ID Único
-        if 'dag' in config_parte and 'id' in config_parte['dag']:
-            config_parte['dag']['id'] = f"{config_parte['dag']['id']}_part_{i+1}"
-        
-        # Termos
-        sessao_busca = config_parte['dag']['search']
-        alvo_busca = sessao_busca[0] if isinstance(sessao_busca, list) else sessao_busca
-        alvo_busca['terms'] = chunk
-        
-        # Força o formato de lista exigido pelo Pydantic do Airflow
-        config_parte['dag']['search'] = [alvo_busca]
-
-        # Salvar
-        caminho_parte = os.path.join(diretorio, f"{nome_arquivo_base}_part_{i+1}.yaml")
-        with open(caminho_parte, 'w', encoding='utf-8') as f:
-            yaml.safe_dump(config_parte, f, allow_unicode=True, sort_keys=False)
-        logging.info(f"Parte {i+1} salva com {len(chunk)} CNPJs")
-
 # Função principal (para Airflow ou CLI)
 def executar_sincronizacao():
     if load_dotenv: load_dotenv(override=True)
@@ -160,37 +81,84 @@ def executar_sincronizacao():
     url_api = os.getenv("BASE_URL")
     access_token = os.getenv("ACCESS_TOKEN")
     secret_token = os.getenv("SECRET_ACCESS_TOKEN")
-    arquivo_yaml = os.getenv("YAML_PATH")
-
-    # Fallback para settings.json se não estiver no env
-    if not all([url_api, access_token, secret_token]):
-        try:
-            settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "settings.json")
-            if os.path.exists(settings_path):
-                with open(settings_path, 'r') as f:
-                    settings = json.load(f)
-                    ak = settings.get('api_keys', {})
-                    url_api = url_api or ak.get('gestaoclick_base_url')
-                    access_token = access_token or ak.get('gestaoclick_access_token')
-                    secret_token = secret_token or ak.get('gestaoclick_secret_token')
-                    arquivo_yaml = arquivo_yaml or ak.get('yaml_path')
-        except Exception as e:
-            logging.error(f"Erro ao tentar ler settings.json: {e}")
 
     if not all([url_api, access_token, secret_token]):
-        logging.error("Credenciais ausentes no .env e no settings.json")
+        # Tenta carregar do banco de dados (SystemConfig) futuramente ou mantém fallback de arquivo se necessário
+        logging.error("Credenciais ausentes no ambiente.")
         return
 
     headers = {"access-token": access_token, "secret-access-token": secret_token, "Accept": "application/json"}
     
     logging.info(f"Iniciando sincronização completa via API: {url_api}...")
-    clientes = get_monitored_data(url_api, "clientes", headers)
+    clientes_api = get_monitored_data(url_api, "clientes", headers)
 
-    if not clientes:
+    if not clientes_api:
         logging.warning("Nenhum dado retornado da API")
         return
-    
-    atualizar_configuracoes(arquivo_yaml, clientes)
+
+    session = Session()
+    try:
+        # 1. Pega todos os CNPJs atuais no banco
+        db_companies = session.query(Company).all()
+        db_cnpj_map = {c.cnpj: c for c in db_companies}
+        
+        cnpjs_na_api = set()
+        novos_count = 0
+        atualizados_count = 0
+
+        # 2. Upsert (Update or Insert)
+        for c_api in clientes_api:
+            cnpj = c_api['cnpj']
+            cnpjs_na_api.add(cnpj)
+            
+            if cnpj in db_cnpj_map:
+                # Update
+                comp = db_cnpj_map[cnpj]
+                comp.name = c_api['nome']
+                comp.uf = c_api['uf']
+                comp.city = c_api['cidade']
+                comp.email = c_api['email']
+                comp.phone = c_api['telefone']
+                comp.situation = c_api['situacao']
+                comp.is_active = True # Reativa se voltou a aparecer na API
+                comp.last_sync = datetime.utcnow()
+                atualizados_count += 1
+            else:
+                # Insert
+                new_comp = Company(
+                    cnpj=cnpj,
+                    name=c_api['nome'],
+                    uf=c_api['uf'],
+                    city=c_api['cidade'],
+                    email=c_api['email'],
+                    phone=c_api['telefone'],
+                    situation=c_api['situacao'],
+                    is_active=True
+                )
+                session.add(new_comp)
+                novos_count += 1
+
+        # 3. Marcar como inativos os que sumiram da API
+        inativados_count = 0
+        for cnpj, comp in db_cnpj_map.items():
+            if cnpj not in cnpjs_na_api and comp.is_active:
+                comp.is_active = False
+                inativados_count += 1
+
+        session.commit()
+        
+        msg = f"Sincronização concluída: {novos_count} novos, {atualizados_count} atualizados, {inativados_count} inativados."
+        logging.info(msg)
+        
+        # Registra log no banco
+        session.add(SystemLog(event="Sincronização API", details=msg))
+        session.commit()
+
+    except Exception as e:
+        session.rollback()
+        logging.error(f"Erro durante persistência no banco: {e}")
+    finally:
+        session.close()
 
 # Boilerplate Airflow
 try:

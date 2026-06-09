@@ -114,3 +114,26 @@ class TermSelector:
         terms_df = terms_df.map(lambda x: str.strip(x) if pd.notnull(x) else "")
 
         return terms_df.to_json(orient="columns")
+
+    def select_terms_from_sqlite(self):
+        """Busca todos os CNPJs ativos diretamente do banco de dados SQLite."""
+        import os
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        
+        # O caminho deve ser compatível com onde o Airflow/Worker enxerga o volume
+        db_path = os.getenv("DATABASE_URL", "sqlite:////opt/airflow/data/rodou.db")
+        engine = create_engine(db_path)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        
+        try:
+            # Import dinâmico para evitar dependência circular se necessário
+            from src.database.models import Company
+            active_cnpjs = [c.cnpj for c in session.query(Company).filter(Company.is_active == True).all()]
+            return active_cnpjs
+        except Exception as e:
+            print(f"Erro ao buscar termos no SQLite: {e}")
+            return []
+        finally:
+            session.close()

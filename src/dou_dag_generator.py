@@ -34,6 +34,14 @@ from searchers import BaseSearcher, DOUSearcher, QDSearcher, INLABSSearcher
 
 from airflow.models import Variable
 from ai.runner import AIRunner
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from database.models import Company, Mention, SystemLog
+
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:////opt/airflow/data/rodou.db")
+engine = create_engine(DATABASE_URL)
+Session = sessionmaker(bind=engine)
+
 SearchResult = Dict[str, Dict[str, Dict[str, List[dict]]]]
 
 
@@ -358,6 +366,50 @@ class DouDigestDagGenerator:
         else:
             result = qd_result
 
+        # PERSISTÊNCIA EM BANCO DE DADOS (NOVO)
+        if result:
+            session = Session()
+            try:
+                # O result vem agrupado como {"single_group": { "cnpj1": {"single_department": [...] } } }
+                # ou {"grupo1": { "term1": [...] } }
+                groups = result.values() if isinstance(result, dict) else []
+                for group in groups:
+                    for term, depts in group.items():
+                        # O termo para nós é o CNPJ no caso da sincronização
+                        cnpj_limpo = term.strip()
+                        company = session.query(Company).filter(Company.cnpj == cnpj_limpo).first()
+                        if not company:
+                            # Se não encontrou pela busca exata, tenta normalizar
+                            cnpj_norm = "".join(filter(str.isdigit, cnpj_limpo))
+                            company = session.query(Company).filter(Company.cnpj.like(f"%{cnpj_norm}%")).first()
+                        
+                        if company:
+                            for dept_name, publications in depts.items():
+                                for pub in publications:
+                                    # Verifica se já existe para evitar duplicidade (pelo link ou id)
+                                    existing = session.query(Mention).filter(
+                                        (Mention.link == pub.get('href')) | 
+                                        (Mention.external_id == str(pub.get('id')))
+                                    ).first()
+                                    
+                                    if not existing:
+                                        new_mention = Mention(
+                                            external_id=str(pub.get('id', '')),
+                                            company_id=company.id,
+                                            section=pub.get('section', 'DOU'),
+                                            date=pub.get('date', 'N/A'),
+                                            abstract=pub.get('abstract', ''),
+                                            link=pub.get('href', '#'),
+                                            detected_at=datetime.utcnow()
+                                        )
+                                        session.add(new_mention)
+                session.commit()
+            except Exception as e:
+                session.rollback()
+                logging.error(f"Erro ao persistir menções no SQLite: {e}")
+            finally:
+                session.close()
+
         # Add more specs info
         search_dict = {}
         search_dict["result"] = result
@@ -454,6 +506,8 @@ class DouDigestDagGenerator:
 
                 for counter, subsearch in enumerate(searches, 1):
                     # Verify if the terms were fetched from the database
+                    terms_come_from_sqlite: bool = subsearch.terms == "FROM_SQLITE"
+
                     terms_come_from_db: bool = isinstance(
                         subsearch.terms, FetchTermsConfig
                     ) and getattr(subsearch.terms, "from_db_select", None)
@@ -482,6 +536,17 @@ class DouDigestDagGenerator:
                         )
                         term_list = (
                             "{{ ti.xcom_pull(task_ids='exec_searchs.select_terms_from_airflow_variable_"
+                            + str(counter)
+                            + "') }}"
+                        )
+
+                    elif terms_come_from_sqlite:
+                        select_terms_from_sqlite_task = PythonOperator(
+                            task_id=f"select_terms_from_sqlite_{counter}",
+                            python_callable=term_selector.select_terms_from_sqlite,
+                        )
+                        term_list = (
+                            "{{ ti.xcom_pull(task_ids='exec_searchs.select_terms_from_sqlite_"
                             + str(counter)
                             + "') }}"
                         )
@@ -534,6 +599,9 @@ class DouDigestDagGenerator:
 
                     if terms_come_from_airflow_variable:
                         select_terms_from_airflow_variable_task >> exec_search_task
+
+                    if terms_come_from_sqlite:
+                        select_terms_from_sqlite_task >> exec_search_task
 
                     if terms_come_from_db:
                         # pylint: disable=pointless-statement
